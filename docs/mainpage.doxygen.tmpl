@@ -91,6 +91,23 @@ hash<auto> data = parse_yaml("description: .\nlimit: .inf\nratio: .5\n");
 @assert(parse_yaml(make_yaml(".inf")) == ".inf");
     @endcode
 
+    @section yaml_core_schema Documents Written by Other Tools
+
+    By default, plain scalars are also resolved to Qore's extended types: ISO 8601 timestamps become absolute
+    dates, ISO 8601 durations with at least one component become relative dates, and \c sqlnull and numeric
+    suffixes have their Qore meanings.  A JSON-compatible document written by another tool, such as an OpenAPI
+    description, has no such types: parse it with the @ref yaml_parse_option_constants "YAML::ParseCoreSchema"
+    option, which resolves plain scalars with the YAML 1.2 core schema only, so every other value keeps its text.
+
+    @code{.py}
+%modern
+%requires yaml
+hash<auto> api = parse_yaml("example:\n  created_at: 2025-03-05T14:59:25Z\n  country: PT\n",
+    YAML::ParseCoreSchema);
+@assert(api.example.created_at == "2025-03-05T14:59:25Z");
+@assert(api.example.country == "PT");
+    @endcode
+
     @section yaml_functions Available Functions
 
     |!Function|!Description
@@ -147,6 +164,13 @@ hash<auto> data = parse_yaml("description: .\nlimit: .inf\nratio: .5\n");
 
     @subsection yaml_1_3_0 yaml Module Version 1.3.0
 
+    <b>New Features</b>
+    - added @ref Qore::parse_yaml(string, int) "parse_yaml(string, int)" and the
+      @ref yaml_parse_option_constants "YAML::ParseCoreSchema" option, which resolves plain scalars with the
+      YAML 1.2 core schema only, so JSON-compatible documents written by other tools (such as OpenAPI
+      descriptions) keep values such as \c 2025-03-05T14:59:25Z and \c PT as strings instead of converting them
+      to dates
+
     <b>New User Modules</b>
     - added <a href="../../YamlRpcClientIo/html/index.html">YamlRpcClientIo</a> (v1.0):
       pure-Qore YAML-RPC client with async I/O via \c HttpClientIo; this is the async I/O
@@ -157,13 +181,18 @@ hash<auto> data = parse_yaml("description: .\nlimit: .inf\nratio: .5\n");
     <b>Bug Fixes</b>
     - fixed document float serialization producing invalid scalars such as \c 1e+09.0 and losing
       significant digits; finite floats now round trip exactly, including signed zero and values
-      outside the integer range, and non-finite floats use standard YAML spellings
+      outside the integer range, using the fewest of 15, 16, or 17 significant digits that do (so \c 99.99
+      stays \c 99.99), and non-finite floats use standard YAML spellings
     - fixed scalar resolution silently converting digit-free tokens such as \c . and \c .e3 to zero;
       malformed exponents and malformed Qore numeric suffixes now remain strings
     - added YAML \c .inf and \c .nan spellings, including their specified case variants, to implicit
       resolution and explicit \c !!float parsing; invalid explicitly tagged floats now raise a parser error
       instead of converting a partial value or aborting on empty input
     - fixed implicit type resolution incorrectly converting literal and folded block scalar text to other types
+    - fixed implicit type resolution converting plain scalars that only look like ISO 8601 durations to a zero
+      duration: \c P, \c PT (the country code of Portugal), and \c P1DT have no duration component or no time
+      component after \c T and now remain strings, so plain country code lists in documents such as OpenAPI
+      schemas keep their values
     - fixed YamlStreamWriter numeric round trips: special floats use YAML spellings, finite floats retain
       precision and their float type, and arbitrary-precision numbers retain their value and precision
     - fixed an emitter bug where date-only timestamps whose day ended in \c '0' were

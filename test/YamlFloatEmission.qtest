@@ -9,6 +9,7 @@
 class YamlFloatEmissionTest inherits QUnit::Test {
     constructor() : Test("YAML document float emission", "1.0") {
         addTestCase("finite float round trips", \finiteTest());
+        addTestCase("readable float text", \readableTest());
         addTestCase("special floats", \specialTest());
         addTestCase("schema bounds and numeric strings", \schemaTest());
         set_return_value(main());
@@ -30,6 +31,39 @@ class YamlFloatEmissionTest inherits QUnit::Test {
                 assertEq(sprintf("%+.17g", value), sprintf("%+.17g", iter.getValue()));
                 assertFalse(iter.next());
             }
+        }
+    }
+
+    private readableTest() {
+        # floats are written with the fewest of 15, 16, or 17 significant digits that parse back exactly, so a
+        # value such as 99.99 keeps its text instead of becoming 99.989999999999995
+        hash<string, float> cases = {
+            "99.99": 99.99,
+            "0.1": 0.1,
+            "0.3": 0.3,
+            "0.30000000000000004": 0.1 + 0.2,
+            "1.0": 1.0,
+            "-2.5": -2.5,
+            "123456.789": 123456.789,
+            "1e+17": 1e17,
+            "3.141592653589793": M_PI,
+            "1.0000000000000002": 1.0000000000000002,
+            "1.7976931348623157e+308": 1.7976931348623157e308,
+        };
+        foreach hash<auto> i in (cases.pairIterator()) {
+            string yaml = make_yaml({"v": i.value}, YAML::BlockStyle);
+            assertTrue(("\n" + yaml).find(sprintf("\nv: %s\n", i.key)) >= 0, sprintf("%s: %y", i.key, yaml));
+            assertEq(i.value, parse_yaml(yaml).v, i.key);
+            StringOutputStream output();
+            YamlStreamWriter writer(output);
+            writer.startDocument();
+            writer.writeScalar(i.value);
+            writer.endDocument();
+            writer.close();
+            string data = output.getData();
+            assertTrue(("\n" + data).find("\n" + i.key + "\n") >= 0 || data.find(" " + i.key + "\n") >= 0,
+                sprintf("%s stream: %y", i.key, data));
+            assertEq(i.value, parse_yaml(data), i.key + " stream");
         }
     }
 

@@ -95,6 +95,27 @@ const Yaml1_1 = QYE_VER_1_1;
 const Yaml1_2 = QYE_VER_1_2;
 ///@}
 
+/** @defgroup yaml_parse_option_constants YAML Parse Option Constants
+    Used with parse_yaml(string, int)
+*/
+///@{
+namespace Qore::YAML;
+
+//! parse option: resolve plain scalars with the YAML 1.2 core schema only
+/** Only plain scalars are resolved, and only to @ref nothing (\c null, \c ~ and empty scalars),
+    booleans, integers (decimal, \c 0o octal and \c 0x hexadecimal) and floats (including \c .inf and \c .nan);
+    every other scalar, including every quoted scalar, is a string.  Qore's extended implicit types - absolute and
+    relative dates, arbitrary-precision numbers, and SQL null - are not recognized; explicit tags still are.
+
+    Use this option for JSON-compatible YAML documents written by other tools, such as OpenAPI descriptions:
+    a plain scalar such as \c 2025-03-05T14:59:25Z (an example value) or \c PT (a country code) stays exactly
+    as written instead of becoming a date.
+
+    @since yaml 1.3
+*/
+const ParseCoreSchema = QYP_CORE_SCHEMA;
+///@}
+
 /** @defgroup yaml_version_enums YAML Version Enum Values
     Used with parse_yaml() options
 */
@@ -214,6 +235,33 @@ auto data = parse_yaml(yaml_string);
  */
 auto parse_yaml(string yaml) [flags=RET_VALUE_ONLY,NAMED_ARGS] {
     QoreYamlParser parser(*yaml, xsink);
+    return parser.parse();
+}
+
+//! Parses a YAML string with the given options and returns the corresponding Qore value or data structure
+/** @par Example:
+    @code{.py}
+# an OpenAPI description: plain scalars keep their text unless they are JSON types
+hash<auto> api = parse_yaml(text, YAML::ParseCoreSchema);
+    @endcode
+
+    @param yaml The YAML string to deserialize
+    @param options @ref yaml_parse_option_constants "parse options" combined with binary or
+
+    @return Qore data as deserialized from the YAML string
+
+    @throw YAML-PARSER-ERROR error parsing YAML string, or an integer value is out of range
+    @throw YAML-OPTION-ERROR unknown parse option
+
+    @since yaml 1.3
+ */
+auto parse_yaml(string yaml, int options) [flags=RET_VALUE_ONLY,NAMED_ARGS] {
+    if (options & ~QYP_CORE_SCHEMA) {
+        xsink->raiseException("YAML-OPTION-ERROR", "unknown parse_yaml() option(s): " QLLD,
+            options & ~QYP_CORE_SCHEMA);
+        return QoreValue();
+    }
+    QoreYamlParser parser(*yaml, xsink, options & QYP_CORE_SCHEMA);
     return parser.parse();
 }
 

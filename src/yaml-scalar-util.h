@@ -54,6 +54,31 @@ DLLLOCAL QoreValue yaml_parse_tagged_scalar(const char* val, size_t len, const c
 DLLLOCAL QoreValue yaml_parse_implicit_scalar(const char* val, size_t len, yaml_scalar_style_t style,
                                                bool favor_string, ExceptionSink* xsink);
 
+//! Formats a finite float exactly and as readably as possible
+/** The value is written with 15, 16, or 17 significant digits, whichever is the fewest that parse back to the same
+    value; as \c %g drops trailing zeros, a value such as \c 99.99 is written as such.  An integral value gets a
+    \c ".0" suffix, so that it is parsed back as a float
+
+    @param out the string to set
+    @param f the value; must be finite
+*/
+DLLLOCAL void yaml_format_finite_float(QoreString& out, double f);
+
+//! Parse an untagged scalar with the YAML 1.2 core schema
+/** Only plain scalars are resolved, and only to null, booleans, integers (decimal, \c 0o octal and \c 0x
+    hexadecimal), and floats (including \c .inf and \c .nan); every other scalar is a string.  This is the
+    type resolution of JSON-compatible YAML documents such as OpenAPI descriptions, where Qore's extended types
+    (dates, durations, arbitrary-precision numbers, SQL null) would change values.
+
+    @param val the scalar value
+    @param len the length of the value
+    @param style the scalar style
+    @param xsink exception sink
+    @return the parsed value
+*/
+DLLLOCAL QoreValue yaml_parse_core_schema_scalar(const char* val, size_t len, yaml_scalar_style_t style,
+                                                 ExceptionSink* xsink);
+
 //! Check if a value looks like an ISO 8601 absolute date/time
 /** @param len the length of the value
     @param val the value string
@@ -62,7 +87,7 @@ DLLLOCAL QoreValue yaml_parse_implicit_scalar(const char* val, size_t len, yaml_
 */
 DLLLOCAL bool yaml_check_absolute_date(size_t len, const char* val, bool quoted = false);
 
-//! Check if a value looks like an ISO 8601 duration (P[n]Y[n]M[n]DT[n]H[n]M[n]S)
+//! Check if a value is an ISO 8601 duration (P[n]Y[n]M[n]DT[n]H[n]M[n]S) with at least one component
 /** @param val the value string
     @return true if the value appears to be a duration
 */

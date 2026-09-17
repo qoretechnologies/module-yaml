@@ -391,11 +391,7 @@ int QoreYamlStreamWriter::writeScalar(QoreValue value, const QoreStringNode* tag
             } else if (std::isinf(f)) {
                 str_node->concat(f < 0 ? "-.inf" : ".inf");
             } else {
-                str_node->sprintf("%.*g", std::numeric_limits<double>::max_digits10, f);
-                // Keep integral floats distinguishable from integers on parse.
-                if (!strpbrk(str_node->c_str(), ".eE")) {
-                    str_node->concat(".0");
-                }
+                yaml_format_finite_float(**str_node, f);
             }
             style = YAML_PLAIN_SCALAR_STYLE;
             break;

@@ -245,6 +245,12 @@ QoreValue QoreYamlParser::parseScalar(bool favor_string) {
         return yaml_parse_tagged_scalar(val, len, tag, xsink);
     }
 
+    if (core_schema) {
+        return favor_string
+            ? QoreValue(new QoreStringNode(val, len, QCS_UTF8))
+            : yaml_parse_core_schema_scalar(val, len, event.data.scalar.style, xsink);
+    }
+
     // Use shared implicit scalar parser for type inference
     return yaml_parse_implicit_scalar(val, len, event.data.scalar.style, favor_string, xsink);
 }

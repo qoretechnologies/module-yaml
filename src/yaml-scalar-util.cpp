@@ -26,6 +26,10 @@
 #include "yaml-scalar-util.h"
 #include "yaml-module.h"
 
+#include <climits>
+#include <cmath>
+#include <cstdlib>
+#include <limits>
 #include <ctype.h>
 #include <errno.h>
 #include <strings.h>
@@ -285,11 +289,12 @@ bool yaml_check_duration(const char* val) {
         return false;
     }
 
+    // an ISO 8601 duration has at least one component, and a "T" is followed by at least one time component, so
+    // plain scalars such as "PT" (Portugal's country code), "P", and "P1DT" are strings
     const char* tv = val + 1;
     bool time = false;
-    if (!*tv) {
-        return false;
-    }
+    bool component = false;
+    bool time_component = false;
     while (*tv) {
         if (*tv == 'T') {
             if (time) {
@@ -307,13 +312,15 @@ bool yaml_check_duration(const char* val) {
             if (*tv != 'H' && *tv != 'M' && *tv != 'S' && *tv != 'u') {
                 return false;
             }
+            time_component = true;
         } else if (*tv != 'Y' && *tv != 'M' && *tv != 'D') {
             return false;
         }
+        component = true;
         ++tv;
     }
 
-    return true;
+    return component && (!time || time_component);
 }
 
 // always return the date/time value in the current timezone
@@ -547,6 +554,139 @@ QoreValue yaml_parse_tagged_scalar(const char* val, size_t len, const char* tag,
 
     xsink->raiseException(QY_PARSE_ERR, "don't know how to parse scalar tag '%s'", tag);
     return QoreValue();
+}
+
+void yaml_format_finite_float(QoreString& out, double f) {
+    assert(std::isfinite(f));
+    // a value that round-trips with at most DBL_DIG significant digits is printed with that precision, as %g
+    // drops trailing zeros; other values need more digits, and max_digits10 always suffices
+    char buf[32];
+    for (int prec = std::numeric_limits<double>::digits10; prec <= std::numeric_limits<double>::max_digits10;
+            ++prec) {
+        snprintf(buf, sizeof(buf), "%.*g", prec, f);
+        if (strtod(buf, nullptr) == f) {
+            break;
+        }
+    }
+    out.set(buf);
+    // keep integral floats distinguishable from integers on parse, without adding a decimal point to an exponent
+    if (!strpbrk(buf, ".eE")) {
+        out.concat(".0");
+    }
+}
+
+// returns true if val[0..len) consists of at least one character of the given class
+static bool yaml_core_all(const char* val, size_t len, int (*is_class)(int)) {
+    if (!len) {
+        return false;
+    }
+    for (size_t i = 0; i < len; ++i) {
+        if (!is_class(static_cast<unsigned char>(val[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static int yaml_core_is_octal(int c) {
+    return c >= '0' && c <= '7';
+}
+
+// YAML 1.2 core schema float: [-+]? ( \. [0-9]+ | [0-9]+ ( \. [0-9]* )? ) ( [eE] [-+]? [0-9]+ )?
+static bool yaml_core_is_float(const char* val, size_t len) {
+    const char* p = val;
+    const char* end = val + len;
+    if (p < end && (*p == '-' || *p == '+')) {
+        ++p;
+    }
+    const char* digits = p;
+    while (p < end && isdigit(static_cast<unsigned char>(*p))) {
+        ++p;
+    }
+    bool mantissa = p > digits;
+    if (p < end && *p == '.') {
+        ++p;
+        const char* frac = p;
+        while (p < end && isdigit(static_cast<unsigned char>(*p))) {
+            ++p;
+        }
+        mantissa = mantissa || p > frac;
+    }
+    if (!mantissa) {
+        return false;
+    }
+    if (p < end && (*p == 'e' || *p == 'E')) {
+        ++p;
+        if (p < end && (*p == '-' || *p == '+')) {
+            ++p;
+        }
+        const char* exp = p;
+        while (p < end && isdigit(static_cast<unsigned char>(*p))) {
+            ++p;
+        }
+        if (p == exp) {
+            return false;
+        }
+    }
+    return p == end;
+}
+
+QoreValue yaml_parse_core_schema_scalar(const char* val, size_t len, yaml_scalar_style_t style,
+                                        ExceptionSink* xsink) {
+    // https://yaml.org/spec/1.2.2/#1032-tag-resolution: only plain scalars are resolved
+    if (style != YAML_PLAIN_SCALAR_STYLE && style != YAML_ANY_SCALAR_STYLE) {
+        return new QoreStringNode(val, len, QCS_UTF8);
+    }
+    if (!len || !strcmp(val, "~") || !strcmp(val, "null") || !strcmp(val, "Null") || !strcmp(val, "NULL")) {
+        return QoreValue();
+    }
+    if (!strcmp(val, "true") || !strcmp(val, "True") || !strcmp(val, "TRUE")) {
+        return true;
+    }
+    if (!strcmp(val, "false") || !strcmp(val, "False") || !strcmp(val, "FALSE")) {
+        return false;
+    }
+
+    // integers
+    bool sign = *val == '-' || *val == '+';
+    if (yaml_core_all(val + sign, len - sign, isdigit)) {
+        errno = 0;
+        char* end;
+        long long v = strtoll(val, &end, 10);
+        if (!errno && end == val + len) {
+            return static_cast<int64>(v);
+        }
+        // out of the integer range: the value is kept exactly
+        return new QoreNumberNode(val);
+    }
+    if (len > 2 && val[0] == '0' && (val[1] == 'o' || val[1] == 'x')) {
+        bool octal = val[1] == 'o';
+        if (yaml_core_all(val + 2, len - 2, octal ? yaml_core_is_octal : isxdigit)) {
+            errno = 0;
+            char* end;
+            unsigned long long v = strtoull(val + 2, &end, octal ? 8 : 16);
+            if (!errno && end == val + len && v <= static_cast<unsigned long long>(LLONG_MAX)) {
+                return static_cast<int64>(v);
+            }
+            xsink->raiseException(QY_PARSE_ERR, "integer value '%s' is out of range", val);
+            return QoreValue();
+        }
+    }
+
+    // floats
+    const char* f = val + sign;
+    size_t flen = len - sign;
+    if (flen == 4 && (!strcmp(f, ".inf") || !strcmp(f, ".Inf") || !strcmp(f, ".INF"))) {
+        return *val == '-' ? -INFINITY : INFINITY;
+    }
+    if (!sign && (!strcmp(val, ".nan") || !strcmp(val, ".NaN") || !strcmp(val, ".NAN"))) {
+        return static_cast<double>(NAN);
+    }
+    if (yaml_core_is_float(val, len)) {
+        return strtod(val, nullptr);
+    }
+
+    return new QoreStringNode(val, len, QCS_UTF8);
 }
 
 QoreValue yaml_parse_implicit_scalar(const char* val, size_t len, yaml_scalar_style_t style,

@@ -29,6 +29,7 @@
 #endif
 
 #include <qore/Qore.h>
+#include "yaml-scalar-util.h"
 #include <qore/QoreSandboxManager.h>
 
 #include <yaml.h>
@@ -51,6 +52,10 @@
 #define QYE_EMIT_SQLNULL        (1 << 8)
 
 #define QYE_DEFAULT (QYE_VER_1_2)
+
+// parser options
+//! resolve plain scalars with the YAML 1.2 core schema only
+#define QYP_CORE_SCHEMA         (1 << 0)
 
 #ifndef YAML_BINARY_TAG
 #define YAML_BINARY_TAG "tag:yaml.org,2002:binary"
@@ -250,11 +255,7 @@ public:
         } else if (std::isinf(f)) {
             tmp.set(f < 0 ? "-.inf" : ".inf");
         } else {
-            tmp.sprintf("%.*g", std::numeric_limits<double>::max_digits10, f);
-            // Preserve float identity without appending a decimal point to an exponent.
-            if (!strpbrk(tmp.c_str(), ".eE")) {
-                tmp.concat(".0");
-            }
+            yaml_format_finite_float(tmp, f);
         }
         return emitScalar(tmp, YAML_FLOAT_TAG);
     }
@@ -444,7 +445,14 @@ public:
 
 class QoreYamlParser : public QoreYamlBase {
 public:
-    DLLLOCAL QoreYamlParser(const QoreString& str, ExceptionSink* xsink) : QoreYamlBase(xsink), discard(false) {
+    //! Creates the parser
+    /** @param str the YAML text
+        @param xsink exception sink
+        @param core_schema if true, plain scalars are resolved with the YAML 1.2 core schema only; see
+        yaml_parse_core_schema_scalar()
+    */
+    DLLLOCAL QoreYamlParser(const QoreString& str, ExceptionSink* xsink, bool core_schema = false)
+            : QoreYamlBase(xsink), discard(false), core_schema(core_schema) {
         yaml_parser_initialize(&parser);
         yaml_parser_set_input_string(&parser, (const unsigned char*)str.c_str(), str.strlen());
         yaml_parser_set_encoding(&parser, YAML_UTF8_ENCODING);
@@ -465,6 +473,8 @@ public:
 protected:
     yaml_parser_t parser;
     bool discard;
+    //! true if plain scalars are resolved with the YAML 1.2 core schema only
+    bool core_schema;
 
     typedef std::map<std::string, QoreValue> alias_map_t;
     alias_map_t alias_map;
