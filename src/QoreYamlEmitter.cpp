@@ -67,7 +67,12 @@ QoreYamlEmitter::QoreYamlEmitter(QoreYamlWriteHandler& wh, int flags, int width,
     }
 }
 
-int QoreYamlEmitter::emit(const QoreValue& v) {
+int QoreYamlEmitter::emit(const QoreValue& val) {
+    // A container can hold a weak (":=") or opaque ("@=") reference, and iterating the
+    // container yields the reference itself rather than its target, so resolve it before
+    // dispatching on the type.  Without this a perfectly serializable hash or list reaches
+    // the default case below and is reported as a type that cannot be converted to YAML.
+    const QoreValue v = val.resolveIndirect();
     switch (v.getType()) {
         case NT_STRING: {
             QoreStringNodeValueHelper str(v);

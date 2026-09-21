@@ -200,6 +200,10 @@ hash<auto> api = parse_yaml("example:\n  created_at: 2025-03-05T14:59:25Z\n  cou
       microseconds component (e.g. \c "2026-04-10" was emitted as \c "2026-04-1"); the
       fractional-seconds trim is now skipped when the formatted string contains no decimal
       point, so date-only values round-trip exactly
+    - fixed serialization of hash and list members holding a weak (\c ":=") or opaque (\c "@=")
+      reference: iterating a container yields the reference itself rather than its target, so such a
+      member was rejected with \c "cannot convert Qore type 'weak hash reference' to YAML" even
+      though its target is an ordinary serializable hash or list
 
     <b>User Module Version Updates</b>
     - <a href="../../YamlRpcClientIo/html/index.html">YamlRpcClientIo</a>: new module (1.0)
