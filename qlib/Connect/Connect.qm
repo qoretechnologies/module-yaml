@@ -412,6 +412,16 @@ hash<string, hash<auto>> all = refl.discoverAll();
     - datagram errors sent via \c CONNECT_FLAG_DATAGRAM_ERROR flag
     - RPC type name mapping in reflection descriptors via
       @ref Connect::ConnectTypeHelper::rpcTypeName "ConnectTypeHelper::rpcTypeName()"
+    - @ref Connect::ConnectClient::call() "ConnectClient::call()" enforces \c max_message_size on a unary
+      response while it is received (and as decoded), so a response over the limit fails with
+      \c CONNECT-MESSAGE-SIZE-ERROR without being received into memory first
+    - fixed @ref Connect::ConnectClient::serverStream() "ConnectClient::serverStream()",
+      @ref Connect::ConnectClient::clientStream() "clientStream()", and
+      @ref Connect::ConnectClient::bidiStream() "bidiStream()": the request was started with the request body
+      already closed, so sending the request message failed with \c HTTPCLIENT-STATE-ERROR
+    - fixed @ref Connect::ConnectClientStream::read() "ConnectClientStream::read()" taking the response headers
+      for the end of the stream, so no message was returned; a response with an HTTP error status (for example,
+      413 for a request body over the server's limit) now raises \c CONNECT-ERROR with the Connect error info
 
     @subsection connect_v1_2 Connect Module Version 1.2
 
